@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>ERS Mr. QR Scanner v0.8A</title>
+
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+  <style>
+    :root {
+      --green: #1f7a1f;
+      --green-bg: #d9f2d9;
+      --yellow: #b36b00;
+      --yellow-bg: #fff1cc;
+      --red: #a61b1b;
+      --red-bg: #ffe0e0;
+      --gray: #555;
+      --light: #f4f4f4;
+      --border: #ddd;
+    }
+
+    body {
+      font-family: Arial, sans-serif;
+      background: var(--light);
+      margin: 0;
+      padding: 18px;
+    }
+
+    .app {
+      max-width: 520px;
+      margin: 0 auto;
+      background: #fff;
+      padding: 22px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+    }
+
+    h1 {
+      text-align: center;
+      margin: 0 0 6px 0;
+      font-size: 25px;
+    }
+
+    .subtitle {
+      text-align: center;
+      color: var(--gray);
+      font-size: 13px;
+      margin-bottom: 16px;
+      line-height: 1.4;
+    }
+
+    .status {
+      text-align: center;
+      font-size: 14px;
+      font-weight: bold;
+      margin-bottom: 12px;
+      padding: 10px;
+      border-radius: 8px;
+      background: #eeeeee;
+      color: var(--gray);
+      border: 1px solid var(--border);
+    }
+
+    .status-ready {
+      background: var(--green-bg);
+      color: var(--green);
+      border: 2px solid var(--green);
+    }
+
+    .status-waiting {
+      background: var(--yellow-bg);
+      color: var(--yellow);
+      border: 2px solid var(--yellow);
+    }
+
+    .status-error {
+      background: var(--red-bg);
+      color: var(--red);
+      border: 2px solid var(--red);
+    }
+
+    #reader {
+      width: 100%;
+      min-height: 280px;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      background: #111;
+      margin-bottom: 12px;
+    }
+
+    .button-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    button {
+      width: 100%;
+      padding: 14px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      border-radius: 8px;
+      border: 1px solid #aaa;
+    }
+
+    .primary {
+      background: var(--green-bg);
+      color: var(--green);
+      border: 2px solid var(--green);
+    }
+
+    .danger {
+      background: var(--red-bg);
+      color: var(--red);
+      border: 2px solid var(--red);
+    }
+
+    .result {
+      margin-top: 12px;
+      padding: 16px;
+      border-radius: 10px;
+      background: #eeeeee;
+      border: 1px solid var(--border);
+      min-height: 120px;
+      text-align: center;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 18px;
+      line-height: 1.4;
+    }
+
+    .payload-label {
+      font-size: 12px;
+      font-weight: bold;
+      color: var(--gray);
+      margin-bottom: 6px;
+    }
+
+    .payload {
+      font-family: Arial, sans-serif;
+      font-size: 18px;
+      font-weight: bold;
+    }
+
+    .note {
+      margin-top: 12px;
+      font-size: 12px;
+      color: var(--gray);
+      line-height: 1.4;
+      text-align: center;
+    }
+
+    .small {
+      font-size: 12px;
+      color: var(--gray);
+      text-align: center;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="app">
+    <h1>ERS Mr. QR</h1>
+
+    <div class="subtitle">
+      Camera Scanner Prototype v0.8A<br>
+      Scan only — no check-in is performed yet.
+    </div>
+
+    <div id="status" class="status status-waiting">
+      Camera not started.
+    </div>
+
+    <div id="reader"></div>
+
+    <div class="button-row">
+      <button type="button" class="primary" onclick="startScanner()">
+        START CAMERA
+      </button>
+
+      <button type="button" class="danger" onclick="stopScanner()">
+        STOP
+      </button>
+    </div>
+
+    <div id="result" class="result">
+      <div class="payload-label">SCANNED PAYLOAD</div>
+      <div class="payload">Nothing scanned yet.</div>
+    </div>
+
+    <div class="note">
+      Expected ERS payload format:<br>
+      <strong>ERS|EVT-2026-001|FS26-0001</strong>
+    </div>
+
+    <div class="small">
+      v0.8A | GitHub Pages scanner-only test
+    </div>
+  </div>
+
+  <script>
+    var html5QrCode = null;
+    var scannerRunning = false;
+    var lastScannedValue = '';
+    var lastScannedAt = 0;
+
+    function setStatus(text, className) {
+      var box = document.getElementById('status');
+      box.className = 'status ' + (className || '');
+      box.textContent = text;
+    }
+
+    function setResult(payload) {
+      document.getElementById('result').innerHTML =
+        '<div class="payload-label">SCANNED PAYLOAD</div>' +
+        '<div class="payload">' + escapeHtml(payload) + '</div>';
+    }
+
+    function escapeHtml(value) {
+      return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function extractRegistrationIdFromPayload(payload) {
+      payload = String(payload || '').trim().toUpperCase();
+
+      if (!payload) return '';
+
+      if (payload.indexOf('|') !== -1) {
+        var parts = payload.split('|');
+        return String(parts[2] || '').trim().toUpperCase();
+      }
+
+      return payload;
+    }
+
+    function showScanSuccess(decodedText) {
+      var now = Date.now();
+
+      // Prevent repeated rapid reads of the same QR.
+      if (
+        decodedText === lastScannedValue &&
+        now - lastScannedAt < 2500
+      ) {
+        return;
+      }
+
+      lastScannedValue = decodedText;
+      lastScannedAt = now;
+
+      var registrationId = extractRegistrationIdFromPayload(decodedText);
+
+      setResult(
+        decodedText +
+        '\n\nExtracted Registration ID:\n' +
+        registrationId
+      );
+
+      setStatus('QR detected.', 'status-ready');
+
+      if (navigator.vibrate) {
+        navigator.vibrate(150);
+      }
+    }
+
+    function showScanError(errorMessage) {
+      // This fires constantly while scanning, so do not display every miss.
+      // Keep silent unless debugging is needed.
+    }
+
+    function startScanner() {
+      if (scannerRunning) {
+        setStatus('Camera already running.', 'status-ready');
+        return;
+      }
+
+      if (!window.Html5Qrcode) {
+        setStatus('QR scanner library did not load.', 'status-error');
+        return;
+      }
+
+      setStatus('Requesting camera permission...', 'status-waiting');
+
+      html5QrCode = new Html5Qrcode('reader');
+
+      Html5Qrcode.getCameras()
+        .then(function(cameras) {
+          if (!cameras || cameras.length === 0) {
+            setStatus('No camera found on this device.', 'status-error');
+            return;
+          }
+
+          var selectedCameraId = chooseBackCamera(cameras);
+
+          return html5QrCode.start(
+            selectedCameraId,
+            {
+              fps: 10,
+              qrbox: {
+                width: 250,
+                height: 250
+              },
+              aspectRatio: 1.0
+            },
+            showScanSuccess,
+            showScanError
+          );
+        })
+        .then(function() {
+          scannerRunning = true;
+          setStatus('Camera running. Point at ERS QR code.', 'status-ready');
+        })
+        .catch(function(error) {
+          setStatus(
+            'Camera error: ' + getReadableError(error),
+            'status-error'
+          );
+        });
+    }
+
+    function chooseBackCamera(cameras) {
+      // Prefer rear/back/environment camera when label is available.
+      for (var i = 0; i < cameras.length; i++) {
+        var label = String(cameras[i].label || '').toLowerCase();
+
+        if (
+          label.indexOf('back') !== -1 ||
+          label.indexOf('rear') !== -1 ||
+          label.indexOf('environment') !== -1
+        ) {
+          return cameras[i].id;
+        }
+      }
+
+      // Many phones only reveal labels after permission.
+      // If unknown, use the last camera, which is often rear camera.
+      return cameras[cameras.length - 1].id;
+    }
+
+    function stopScanner() {
+      if (!html5QrCode || !scannerRunning) {
+        setStatus('Camera is not running.', 'status-waiting');
+        return;
+      }
+
+      html5QrCode.stop()
+        .then(function() {
+          scannerRunning = false;
+          setStatus('Camera stopped.', 'status-waiting');
+        })
+        .catch(function(error) {
+          setStatus(
+            'Stop error: ' + getReadableError(error),
+            'status-error'
+          );
+        });
+    }
+
+    function getReadableError(error) {
+      if (!error) return 'Unknown error';
+
+      if (typeof error === 'string') return error;
+
+      if (error.message) return error.message;
+
+      return JSON.stringify(error);
+    }
+  </script>
+</body>
+</html>
