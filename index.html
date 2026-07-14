@@ -627,11 +627,15 @@
         return;
       }
 
-      if (
-        !ERS_CONFIG.webAppUrl ||
-        ERS_CONFIG.webAppUrl === 'PASTE_YOUR_DEV_WEB_APP_EXEC_URL_HERE'
-      ) {
-        setStatus('Web app URL is not configured in index.html.', 'status-error');
+      if (!ERS_CONFIG.webAppUrl || ERS_CONFIG.webAppUrl.indexOf('/exec') === -1) {
+        setStatus('Web app URL is missing or invalid.', 'status-error');
+      
+        setResult(
+          'WEB APP URL ERROR\n\nConfigured URL:\n' +
+          ERS_CONFIG.webAppUrl,
+          'result-invalid'
+        );
+      
         return;
       }
 
