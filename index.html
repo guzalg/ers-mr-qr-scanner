@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <title>ERS Mr. QR Scanner v0.8B</title>
+  <title>ERS Mr. QR Scanner v0.8C</title>
 
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 
@@ -134,6 +134,16 @@
       line-height: 1.4;
     }
 
+    .result-valid {
+      background: var(--green-bg);
+      border: 3px solid var(--green);
+    }
+
+    .result-invalid {
+      background: var(--red-bg);
+      border: 3px solid var(--red);
+    }
+
     .payload-label {
       font-size: 12px;
       font-weight: bold;
@@ -213,8 +223,8 @@
     <h1>ERS Mr. QR</h1>
 
     <div class="subtitle">
-      Camera Scanner Prototype v0.8B<br>
-      Scan + confirm button — backend not connected yet.
+      Camera Scanner Prototype v0.8C<br>
+      Scan + validate + confirm button — backend not connected yet.
     </div>
 
     <div id="status" class="status status-waiting">
@@ -257,11 +267,28 @@
     </div>
 
     <div class="small">
-      v0.8B | GitHub Pages scanner + check-in button test
+      v0.8C | GitHub Pages scanner + payload validation
     </div>
   </div>
 
   <script>
+    //====================================================
+    // ERS MR. QR - CONFIGURATION
+    //====================================================
+
+    var ERS_CONFIG = {
+      systemPrefix: 'ERS',
+      eventCode: 'EVT-2026-001',
+      registrationPrefix: 'FS26',
+      registrationDigits: 4,
+      allowPlainRegistrationId: false
+    };
+
+
+    //====================================================
+    // ERS MR. QR - STATE
+    //====================================================
+
     var html5QrCode = null;
     var scannerRunning = false;
     var lastScannedValue = '';
@@ -269,7 +296,12 @@
 
     var currentPayload = '';
     var currentRegistrationId = '';
+    var currentValidation = null;
 
+
+    //====================================================
+    // ERS MR. QR - UI HELPERS
+    //====================================================
 
     function setStatus(text, className) {
       var box = document.getElementById('status');
@@ -278,8 +310,11 @@
     }
 
 
-    function setResult(payload) {
-      document.getElementById('result').innerHTML =
+    function setResult(payload, className) {
+      var box = document.getElementById('result');
+
+      box.className = 'result ' + (className || '');
+      box.innerHTML =
         '<div class="payload-label">SCANNED PAYLOAD</div>' +
         '<div class="payload">' + escapeHtml(payload) + '</div>';
     }
@@ -292,60 +327,6 @@
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#039;');
-    }
-
-
-    function extractRegistrationIdFromPayload(payload) {
-      payload = String(payload || '').trim().toUpperCase();
-
-      if (!payload) return '';
-
-      if (payload.indexOf('|') !== -1) {
-        var parts = payload.split('|');
-        return String(parts[2] || '').trim().toUpperCase();
-      }
-
-      return payload;
-    }
-
-
-    function showScanSuccess(decodedText) {
-      var now = Date.now();
-
-      // Prevent repeated rapid reads of the same QR.
-      if (
-        decodedText === lastScannedValue &&
-        now - lastScannedAt < 2500
-      ) {
-        return;
-      }
-
-      lastScannedValue = decodedText;
-      lastScannedAt = now;
-
-      var registrationId = extractRegistrationIdFromPayload(decodedText);
-
-      currentPayload = decodedText;
-      currentRegistrationId = registrationId;
-
-      setResult(
-        decodedText +
-        '\n\nExtracted Registration ID:\n' +
-        registrationId
-      );
-
-      showCheckInPanel(registrationId);
-
-      setStatus('QR detected. Ready to check in.', 'status-ready');
-
-      if (navigator.vibrate) {
-        navigator.vibrate(150);
-      }
-    }
-
-
-    function showScanError(errorMessage) {
-      // This fires constantly while scanning, so we intentionally keep it silent.
     }
 
 
@@ -372,26 +353,237 @@
     }
 
 
-    function handleCheckInButtonClick() {
-      if (!currentRegistrationId) {
-        setStatus('No Registration ID ready for check-in.', 'status-error');
+    //====================================================
+    // ERS MR. QR - PAYLOAD VALIDATION
+    //====================================================
+
+    function validateQrPayload(rawPayload) {
+      var payload = String(rawPayload || '').trim().toUpperCase();
+
+      if (!payload) {
+        return invalidValidation_('Empty QR payload.');
+      }
+
+      if (payload.indexOf('|') === -1) {
+        if (ERS_CONFIG.allowPlainRegistrationId) {
+          return validatePlainRegistrationId_(payload);
+        }
+
+        return invalidValidation_(
+          'Invalid ERS QR format.\n\nExpected:\n' +
+          ERS_CONFIG.systemPrefix + '|' +
+          ERS_CONFIG.eventCode + '|' +
+          ERS_CONFIG.registrationPrefix + '-0001'
+        );
+      }
+
+      var parts = payload.split('|');
+
+      if (parts.length !== 3) {
+        return invalidValidation_(
+          'Invalid ERS QR structure.\n\nExpected 3 parts:\n' +
+          'SYSTEM|EVENT CODE|REGISTRATION ID'
+        );
+      }
+
+      var systemPrefix = String(parts[0] || '').trim().toUpperCase();
+      var eventCode = String(parts[1] || '').trim().toUpperCase();
+      var registrationId = String(parts[2] || '').trim().toUpperCase();
+
+      if (systemPrefix !== ERS_CONFIG.systemPrefix) {
+        return invalidValidation_(
+          'Invalid QR system prefix.\n\nExpected: ' +
+          ERS_CONFIG.systemPrefix +
+          '\nFound: ' +
+          systemPrefix
+        );
+      }
+
+      if (eventCode !== ERS_CONFIG.eventCode) {
+        return invalidValidation_(
+          'Invalid event code.\n\nExpected: ' +
+          ERS_CONFIG.eventCode +
+          '\nFound: ' +
+          eventCode
+        );
+      }
+
+      var registrationCheck = validateRegistrationId_(registrationId);
+
+      if (!registrationCheck.ok) {
+        return registrationCheck;
+      }
+
+      return {
+        ok: true,
+        code: 'VALID_ERS_QR',
+        message: 'Valid ERS QR payload.',
+        payload: payload,
+        systemPrefix: systemPrefix,
+        eventCode: eventCode,
+        registrationId: registrationId
+      };
+    }
+
+
+    function validatePlainRegistrationId_(registrationId) {
+      var registrationCheck = validateRegistrationId_(registrationId);
+
+      if (!registrationCheck.ok) {
+        return registrationCheck;
+      }
+
+      return {
+        ok: true,
+        code: 'VALID_PLAIN_REGISTRATION_ID',
+        message: 'Valid Registration ID.',
+        payload: registrationId,
+        systemPrefix: '',
+        eventCode: '',
+        registrationId: registrationId
+      };
+    }
+
+
+    function validateRegistrationId_(registrationId) {
+      registrationId = String(registrationId || '').trim().toUpperCase();
+
+      var pattern = new RegExp(
+        '^' +
+        ERS_CONFIG.registrationPrefix +
+        '-\\d{' +
+        ERS_CONFIG.registrationDigits +
+        '}$'
+      );
+
+      if (!pattern.test(registrationId)) {
+        return invalidValidation_(
+          'Invalid Registration ID format.\n\nExpected format:\n' +
+          ERS_CONFIG.registrationPrefix +
+          '-' +
+          '0'.repeat(ERS_CONFIG.registrationDigits - 1) +
+          '1' +
+          '\nFound:\n' +
+          registrationId
+        );
+      }
+
+      return {
+        ok: true,
+        code: 'VALID_REGISTRATION_ID',
+        message: 'Valid Registration ID.',
+        registrationId: registrationId
+      };
+    }
+
+
+    function invalidValidation_(message) {
+      return {
+        ok: false,
+        code: 'INVALID_QR_PAYLOAD',
+        message: message,
+        payload: '',
+        registrationId: ''
+      };
+    }
+
+
+    //====================================================
+    // ERS MR. QR - SCANNER EVENTS
+    //====================================================
+
+    function showScanSuccess(decodedText) {
+      var now = Date.now();
+
+      // Prevent repeated rapid reads of the same QR.
+      if (
+        decodedText === lastScannedValue &&
+        now - lastScannedAt < 2500
+      ) {
         return;
       }
 
-      // v0.8B placeholder only.
-      // v0.8C will connect this button to the ERS Apps Script endpoint.
+      lastScannedValue = decodedText;
+      lastScannedAt = now;
+
+      var validation = validateQrPayload(decodedText);
+
+      currentValidation = validation;
+      currentPayload = String(decodedText || '').trim();
+      currentRegistrationId = validation.ok ? validation.registrationId : '';
+
+      if (!validation.ok) {
+        hideCheckInPanel();
+
+        setResult(
+          'INVALID QR\n\n' +
+          'Scanned:\n' +
+          currentPayload +
+          '\n\nReason:\n' +
+          validation.message,
+          'result-invalid'
+        );
+
+        setStatus('Invalid ERS QR code.', 'status-error');
+
+        if (navigator.vibrate) {
+          navigator.vibrate([200, 80, 200]);
+        }
+
+        return;
+      }
+
+      setResult(
+        validation.message +
+        '\n\nPayload:\n' +
+        currentPayload +
+        '\n\nRegistration ID:\n' +
+        validation.registrationId,
+        'result-valid'
+      );
+
+      showCheckInPanel(validation.registrationId);
+
+      setStatus('Valid QR detected. Ready to check in.', 'status-ready');
+
+      if (navigator.vibrate) {
+        navigator.vibrate(150);
+      }
+    }
+
+
+    function showScanError(errorMessage) {
+      // This fires constantly while scanning, so we intentionally keep it silent.
+    }
+
+
+    //====================================================
+    // ERS MR. QR - CHECK-IN BUTTON PLACEHOLDER
+    //====================================================
+
+    function handleCheckInButtonClick() {
+      if (!currentValidation || !currentValidation.ok || !currentRegistrationId) {
+        setStatus('No valid ERS QR ready for check-in.', 'status-error');
+        hideCheckInPanel();
+        return;
+      }
+
+      // v0.8C placeholder only.
+      // v0.8D will connect this button to the ERS Apps Script endpoint.
       setStatus(
-        'Check-in button test successful. Backend not connected yet.',
+        'Validation passed. Backend not connected yet.',
         'status-waiting'
       );
 
       setResult(
         'CHECK-IN BUTTON PRESSED\n\n' +
+        'Validation: PASSED\n\n' +
         'Payload:\n' +
         currentPayload +
         '\n\nRegistration ID:\n' +
         currentRegistrationId +
-        '\n\nNo Google Sheet update was made yet.'
+        '\n\nNo Google Sheet update was made yet.',
+        'result-valid'
       );
 
       if (navigator.vibrate) {
@@ -399,6 +591,10 @@
       }
     }
 
+
+    //====================================================
+    // ERS MR. QR - CAMERA CONTROL
+    //====================================================
 
     function startScanner() {
       if (scannerRunning) {
