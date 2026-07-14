@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <title>ERS Mr. QR Scanner v0.8A</title>
+  <title>ERS Mr. QR Scanner v0.8B</title>
 
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 
@@ -147,6 +147,50 @@
       font-weight: bold;
     }
 
+    .checkin-panel {
+      display: none;
+      margin-top: 14px;
+      padding: 16px;
+      border-radius: 12px;
+      background: var(--green-bg);
+      border: 3px solid var(--green);
+      text-align: center;
+    }
+
+    .checkin-panel.visible {
+      display: block;
+    }
+
+    .checkin-title {
+      font-size: 14px;
+      font-weight: bold;
+      color: var(--green);
+      margin-bottom: 8px;
+    }
+
+    .checkin-id {
+      font-size: 26px;
+      font-weight: bold;
+      margin-bottom: 14px;
+      word-break: break-word;
+    }
+
+    .big-checkin-button {
+      width: 100%;
+      padding: 22px;
+      font-size: 24px;
+      font-weight: bold;
+      border-radius: 12px;
+      border: 3px solid var(--green);
+      background: var(--green);
+      color: white;
+      cursor: pointer;
+    }
+
+    .big-checkin-button:active {
+      transform: scale(0.98);
+    }
+
     .note {
       margin-top: 12px;
       font-size: 12px;
@@ -169,8 +213,8 @@
     <h1>ERS Mr. QR</h1>
 
     <div class="subtitle">
-      Camera Scanner Prototype v0.8A<br>
-      Scan only — no check-in is performed yet.
+      Camera Scanner Prototype v0.8B<br>
+      Scan + confirm button — backend not connected yet.
     </div>
 
     <div id="status" class="status status-waiting">
@@ -194,13 +238,26 @@
       <div class="payload">Nothing scanned yet.</div>
     </div>
 
+    <div id="checkinPanel" class="checkin-panel">
+      <div class="checkin-title">READY TO CHECK IN</div>
+      <div id="checkinRegistrationId" class="checkin-id">-</div>
+
+      <button
+        type="button"
+        class="big-checkin-button"
+        onclick="handleCheckInButtonClick()"
+      >
+        CHECK IN THIS PERSON
+      </button>
+    </div>
+
     <div class="note">
       Expected ERS payload format:<br>
       <strong>ERS|EVT-2026-001|FS26-0001</strong>
     </div>
 
     <div class="small">
-      v0.8A | GitHub Pages scanner-only test
+      v0.8B | GitHub Pages scanner + check-in button test
     </div>
   </div>
 
@@ -210,17 +267,23 @@
     var lastScannedValue = '';
     var lastScannedAt = 0;
 
+    var currentPayload = '';
+    var currentRegistrationId = '';
+
+
     function setStatus(text, className) {
       var box = document.getElementById('status');
       box.className = 'status ' + (className || '');
       box.textContent = text;
     }
 
+
     function setResult(payload) {
       document.getElementById('result').innerHTML =
         '<div class="payload-label">SCANNED PAYLOAD</div>' +
         '<div class="payload">' + escapeHtml(payload) + '</div>';
     }
+
 
     function escapeHtml(value) {
       return String(value || '')
@@ -230,6 +293,7 @@
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#039;');
     }
+
 
     function extractRegistrationIdFromPayload(payload) {
       payload = String(payload || '').trim().toUpperCase();
@@ -243,6 +307,7 @@
 
       return payload;
     }
+
 
     function showScanSuccess(decodedText) {
       var now = Date.now();
@@ -260,23 +325,80 @@
 
       var registrationId = extractRegistrationIdFromPayload(decodedText);
 
+      currentPayload = decodedText;
+      currentRegistrationId = registrationId;
+
       setResult(
         decodedText +
         '\n\nExtracted Registration ID:\n' +
         registrationId
       );
 
-      setStatus('QR detected.', 'status-ready');
+      showCheckInPanel(registrationId);
+
+      setStatus('QR detected. Ready to check in.', 'status-ready');
 
       if (navigator.vibrate) {
         navigator.vibrate(150);
       }
     }
 
+
     function showScanError(errorMessage) {
-      // This fires constantly while scanning, so do not display every miss.
-      // Keep silent unless debugging is needed.
+      // This fires constantly while scanning, so we intentionally keep it silent.
     }
+
+
+    function showCheckInPanel(registrationId) {
+      var panel = document.getElementById('checkinPanel');
+      var idBox = document.getElementById('checkinRegistrationId');
+
+      if (!registrationId) {
+        hideCheckInPanel();
+        return;
+      }
+
+      idBox.textContent = registrationId;
+      panel.className = 'checkin-panel visible';
+    }
+
+
+    function hideCheckInPanel() {
+      var panel = document.getElementById('checkinPanel');
+      var idBox = document.getElementById('checkinRegistrationId');
+
+      idBox.textContent = '-';
+      panel.className = 'checkin-panel';
+    }
+
+
+    function handleCheckInButtonClick() {
+      if (!currentRegistrationId) {
+        setStatus('No Registration ID ready for check-in.', 'status-error');
+        return;
+      }
+
+      // v0.8B placeholder only.
+      // v0.8C will connect this button to the ERS Apps Script endpoint.
+      setStatus(
+        'Check-in button test successful. Backend not connected yet.',
+        'status-waiting'
+      );
+
+      setResult(
+        'CHECK-IN BUTTON PRESSED\n\n' +
+        'Payload:\n' +
+        currentPayload +
+        '\n\nRegistration ID:\n' +
+        currentRegistrationId +
+        '\n\nNo Google Sheet update was made yet.'
+      );
+
+      if (navigator.vibrate) {
+        navigator.vibrate([100, 80, 100]);
+      }
+    }
+
 
     function startScanner() {
       if (scannerRunning) {
@@ -328,6 +450,7 @@
         });
     }
 
+
     function chooseBackCamera(cameras) {
       // Prefer rear/back/environment camera when label is available.
       for (var i = 0; i < cameras.length; i++) {
@@ -347,6 +470,7 @@
       return cameras[cameras.length - 1].id;
     }
 
+
     function stopScanner() {
       if (!html5QrCode || !scannerRunning) {
         setStatus('Camera is not running.', 'status-waiting');
@@ -356,6 +480,7 @@
       html5QrCode.stop()
         .then(function() {
           scannerRunning = false;
+          hideCheckInPanel();
           setStatus('Camera stopped.', 'status-waiting');
         })
         .catch(function(error) {
@@ -365,6 +490,7 @@
           );
         });
     }
+
 
     function getReadableError(error) {
       if (!error) return 'Unknown error';
