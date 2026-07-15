@@ -727,57 +727,6 @@ function callMrQrEndpoint(payload) {
   document.body.appendChild(script);
 }
 
-      var params = [
-        'action=mrqrCheckIn',
-        'callback=' + encodeURIComponent(callbackName),
-        'payload=' + encodeURIComponent(payload),
-        'token=' + encodeURIComponent(getScannerToken()),
-        'station=' + encodeURIComponent(getStationName()),
-        'operator=' + encodeURIComponent(getOperatorName())
-      ].join('&');
-
-      var separator = ERS_CONFIG.webAppUrl.indexOf('?') === -1 ? '?' : '&';
-      var url = ERS_CONFIG.webAppUrl + separator + params;
-
-      var script = document.createElement('script');
-      script.src = url;
-      script.async = true;
-
-      script.onerror = function() {
-  cleanupJsonp(callbackName, script);
-  setCheckInButtonBusy(false);
-
-  setStatus('Could not reach ERS endpoint.', 'status-error');
-
-  setResult(
-    'CONNECTION ERROR\n\n' +
-    'The scanner could not load the ERS endpoint.\n\n' +
-    'URL tried:\n' +
-    url +
-    '\n\n' +
-    'Copy this URL and open it directly in the phone browser.',
-    'result-invalid'
-  );
-};
-      document.body.appendChild(script);
-
-              setTimeout(function() {
-          if (window[callbackName]) {
-            cleanupJsonp(callbackName, script);
-            setCheckInButtonBusy(false);
-        
-            setStatus('ERS endpoint timeout.', 'status-error');
-        
-            setResult(
-              'ENDPOINT TIMEOUT\n\n' +
-              'The ERS endpoint was requested but no callback response returned.\n\n' +
-              'URL tried:\n' +
-              url,
-              'result-invalid'
-            );
-          }
-        }, 10000);
-    }
 
 
     function cleanupJsonp(callbackName, script) {
