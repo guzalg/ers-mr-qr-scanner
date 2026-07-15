@@ -646,18 +646,86 @@
     }
 
 
-    function callMrQrEndpoint(payload) {
-      var callbackName =
-        'mrQrCallback_' +
-        Date.now() +
-        '_' +
-        Math.floor(Math.random() * 1000000);
+function callMrQrEndpoint(payload) {
+  var callbackName =
+    'mrQrCallback_' +
+    Date.now() +
+    '_' +
+    Math.floor(Math.random() * 1000000);
 
-      window[callbackName] = function(response) {
-        cleanupJsonp(callbackName, script);
-        setCheckInButtonBusy(false);
-        handleBackendResponse(response);
-      };
+  var requestCompleted = false;
+  var timeoutId = null;
+  var script = document.createElement('script');
+
+  function finishRequest() {
+    if (requestCompleted) {
+      return false;
+    }
+
+    requestCompleted = true;
+
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      timeoutId = null;
+    }
+
+    cleanupJsonp(callbackName, script);
+    setCheckInButtonBusy(false);
+
+    return true;
+  }
+
+  window[callbackName] = function(response) {
+    if (!finishRequest()) return;
+
+    handleBackendResponse(response);
+  };
+
+  var params = [
+    'action=mrqrCheckIn',
+    'callback=' + encodeURIComponent(callbackName),
+    'payload=' + encodeURIComponent(payload),
+    'token=' + encodeURIComponent(getScannerToken()),
+    'station=' + encodeURIComponent(getStationName()),
+    'operator=' + encodeURIComponent(getOperatorName())
+  ].join('&');
+
+  var separator = ERS_CONFIG.webAppUrl.indexOf('?') === -1 ? '?' : '&';
+  var url = ERS_CONFIG.webAppUrl + separator + params;
+
+  script.src = url;
+  script.async = true;
+
+  script.onerror = function() {
+    if (!finishRequest()) return;
+
+    setStatus('Could not reach ERS endpoint.', 'status-error');
+
+    setResult(
+      'CONNECTION ERROR\n\n' +
+      'The scanner could not load the ERS endpoint.\n\n' +
+      'URL tried:\n' +
+      url,
+      'result-invalid'
+    );
+  };
+
+  timeoutId = setTimeout(function() {
+    if (!finishRequest()) return;
+
+    setStatus('ERS endpoint timeout.', 'status-error');
+
+    setResult(
+      'ENDPOINT TIMEOUT\n\n' +
+      'The ERS endpoint did not respond within 10 seconds.\n\n' +
+      'URL tried:\n' +
+      url,
+      'result-invalid'
+    );
+  }, 10000);
+
+  document.body.appendChild(script);
+}
 
       var params = [
         'action=mrqrCheckIn',
